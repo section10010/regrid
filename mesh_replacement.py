@@ -13,6 +13,7 @@ load = 'tensionX'
 grid = '20grains16x16x16'
 mat = 'material'
 grid2 = grid+'-2'
+grid3 = grid+'-3'
 
 cwd = os.getcwd()
 print(wd := tempfile.mkdtemp())
@@ -48,19 +49,22 @@ def regrid_restart(fname_in,fname_out,mapping_flat):
         for d in f_in['solver']:
             if d not in f_out['solver']: f_in['solver'].copy(d,f_out['solver'])
 
+# normal run
 damask.util.run(f'DAMASK_grid -g {cwd}/{grid}.vti -l {cwd}/{load}.yaml -m {cwd}/{mat}.yaml -w {wd}')
 r = damask.Result(f'{wd}/{grid}_{load}_{mat}.hdf5')
 r.add_IPF_color([0,0,1])
 r.export_VTK(target_dir=cwd)
 F_avg = np.average(r.view(increments=-1).get('F'),axis=0)
 
+# regrid 1
 cells_new = new_cells(F_avg,r.cells)
 mapping = damask.grid_filters.regrid(r.size,r.view(increments=-1).get('F').reshape(tuple(r.cells)+(3,3)),cells_new)
 mapping_flat = mapping.reshape(-1,order='F')
 
 g = damask.GeomGrid.load(f'{grid}.vti')
 g.size = F_avg@g.size
-g.assemble(mapping).save(f'{wd}/{grid2}.vti')
+g2 = g.assemble(mapping)
+g2.save(f'{wd}/{grid2}.vti')
 
 regrid_restart(f'{wd}/{grid}_{load}_{mat}_restart.hdf5',f'{wd}/{grid2}_{load}_{mat}_restart.hdf5',mapping_flat)
 
@@ -71,7 +75,30 @@ with h5py.File(f'{wd}/{grid2}_{load}_{mat}.hdf5','a') as f:
 
 shutil.copyfile(f'{cwd}/{load}-2.yaml',f'{wd}/{load}.yaml')
 shutil.copyfile(f'{wd}/{grid}_{load}_{mat}.sta',f'{wd}/{grid2}_{load}_{mat}.sta')
-damask.util.run(f'DAMASK_grid -g {grid2}.vti -l {load}.yaml -m {cwd}/{mat}.yaml -r 140 -w {wd}')
+damask.util.run(f'DAMASK_grid -g {grid2}.vti -l {load}.yaml -m {cwd}/{mat}.yaml -r 190 -w {wd}')
 r = damask.Result(f'{wd}/{grid2}_{load}_{mat}.hdf5').view_less(increments=0)
+r.add_IPF_color([0,0,1])
+r.export_VTK(target_dir=cwd)
+F_avg = np.average(r.view(increments=-1).get('F'),axis=0)
+
+# regrid 2
+cells_new = new_cells(F_avg,r.cells)
+mapping = damask.grid_filters.regrid(r.size,r.view(increments=-1).get('F').reshape(tuple(r.cells)+(3,3)),cells_new)
+mapping_flat = mapping.reshape(-1,order='F')
+
+g2.size = F_avg@g2.size
+g2.assemble(mapping).save(f'{wd}/{grid3}.vti')
+
+regrid_restart(f'{wd}/{grid2}_{load}_{mat}_restart.hdf5',f'{wd}/{grid3}_{load}_{mat}_restart.hdf5',mapping_flat)
+
+r.view(increments=0).export_DADF5(f'{wd}/{grid3}_{load}_{mat}.hdf5',mapping=mapping)
+
+with h5py.File(f'{wd}/{grid3}_{load}_{mat}.hdf5','a') as f:
+    f['geometry'].attrs['size'] = g2.size
+
+shutil.copyfile(f'{cwd}/{load}-3.yaml',f'{wd}/{load}.yaml')
+shutil.copyfile(f'{wd}/{grid2}_{load}_{mat}.sta',f'{wd}/{grid3}_{load}_{mat}.sta')
+damask.util.run(f'DAMASK_grid -g {grid3}.vti -l {load}.yaml -m {cwd}/{mat}.yaml -r 440 -w {wd}')
+r = damask.Result(f'{wd}/{grid3}_{load}_{mat}.hdf5').view_less(increments=0)
 r.add_IPF_color([0,0,1])
 r.export_VTK(target_dir=cwd)
