@@ -23,22 +23,25 @@ def new_cells(F_avg,cells):
     return (F_avg@cells * np.max(cells/(F_avg@cells))).astype(int)
 
 
-def regrid_restart(fname_in,fname_out,mapping_flat):
+def regrid_restart(fname_in,fname_out,mapping_flat,mapping_phase):
     with (h5py.File(fname_in) as f_in, h5py.File(fname_out,'w') as f_out):
         f_in.copy('homogenization',f_out)
 
         f_out.create_group('phase')
         for label in f_in['phase']:
+            m = mapping_flat[np.isin(mapping_flat,mapping_phase[label])]
+            for i,j in enumerate(mapping_phase[label]):
+                m[m==j] = i
             f_out['phase'].create_group(label)
             F_e0 = np.matmul(f_in['phase'][label]['F'][()],np.linalg.inv(f_in['phase'][label]['F_p'][()]))
             R_e0, V_e0 = damask.mechanics._polar_decomposition(F_e0, ['R','V'])
-            f_out['phase'][label].create_dataset('F',data=np.broadcast_to(np.eye(3),(len(mapping_flat),3,3,)))
-            f_out['phase'][label].create_dataset('F_e',data=R_e0[mapping_flat])
-            f_out['phase'][label].create_dataset('F_p',data=damask.tensor.transpose(R_e0)[mapping_flat])
-            f_out['phase'][label].create_dataset('S',data=np.zeros((len(mapping_flat),3,3)))
+            f_out['phase'][label].create_dataset('F',data=np.broadcast_to(np.eye(3),(len(m),3,3,)))
+            f_out['phase'][label].create_dataset('F_e',data=R_e0[m])
+            f_out['phase'][label].create_dataset('F_p',data=damask.tensor.transpose(R_e0)[m])
+            f_out['phase'][label].create_dataset('S',data=np.zeros((len(m),3,3)))
             for d in f_in['phase'][label]:
                 if d in f_out[f'phase/{label}']: continue
-                f_out['phase'][label].create_dataset(d,data=f_in['phase'][label][d][()][mapping_flat])
+                f_out['phase'][label].create_dataset(d,data=f_in['phase'][label][d][()][m])
 
         f_out.create_group('solver')
         for d in ['F','F_lastInc']:
@@ -54,11 +57,12 @@ damask.util.run(f'DAMASK_grid -g {cwd}/{grid}.vti -l {cwd}/{load}.yaml -m {cwd}/
 r = damask.Result(f'{wd}/{grid}_{load}_{mat}.hdf5')
 r.add_IPF_color([0,0,1])
 r.export_VTK(target_dir=cwd)
-F_avg = np.average(r.view(increments=-1).get('F'),axis=0)
+F_avg = np.average(r.view(increments=-1).place('F'),axis=0)
 
 # regrid 1
 cells_new = new_cells(F_avg,r.cells)
-mapping = damask.grid_filters.regrid(r.size,r.view(increments=-1).get('F').reshape(tuple(r.cells)+(3,3)),cells_new)
+mapping_phase = r._mappings()[0][0]
+mapping = damask.grid_filters.regrid(r.size,r.view(increments=-1).place('F').reshape(tuple(r.cells)+(3,3)),cells_new)
 mapping_flat = mapping.reshape(-1,order='F')
 
 g = damask.GeomGrid.load(f'{grid}.vti')
@@ -66,7 +70,7 @@ g.size = F_avg@g.size
 g2 = g.assemble(mapping)
 g2.save(f'{wd}/{grid2}.vti')
 
-regrid_restart(f'{wd}/{grid}_{load}_{mat}_restart.hdf5',f'{wd}/{grid2}_{load}_{mat}_restart.hdf5',mapping_flat)
+regrid_restart(f'{wd}/{grid}_{load}_{mat}_restart.hdf5',f'{wd}/{grid2}_{load}_{mat}_restart.hdf5',mapping_flat,mapping_phase)
 
 r.view(increments=0).export_DADF5(f'{wd}/{grid2}_{load}_{mat}.hdf5',mapping=mapping)
 
@@ -79,17 +83,18 @@ damask.util.run(f'DAMASK_grid -g {grid2}.vti -l {load}.yaml -m {cwd}/{mat}.yaml 
 r = damask.Result(f'{wd}/{grid2}_{load}_{mat}.hdf5').view_less(increments=0)
 r.add_IPF_color([0,0,1])
 r.export_VTK(target_dir=cwd)
-F_avg = np.average(r.view(increments=-1).get('F'),axis=0)
+F_avg = np.average(r.view(increments=-1).place('F'),axis=0)
 
 # regrid 2
 cells_new = new_cells(F_avg,r.cells)
-mapping = damask.grid_filters.regrid(r.size,r.view(increments=-1).get('F').reshape(tuple(r.cells)+(3,3)),cells_new)
+mapping_phase = r._mappings()[0][0]
+mapping = damask.grid_filters.regrid(r.size,r.view(increments=-1).place('F').reshape(tuple(r.cells)+(3,3)),cells_new)
 mapping_flat = mapping.reshape(-1,order='F')
 
 g2.size = F_avg@g2.size
 g2.assemble(mapping).save(f'{wd}/{grid3}.vti')
 
-regrid_restart(f'{wd}/{grid2}_{load}_{mat}_restart.hdf5',f'{wd}/{grid3}_{load}_{mat}_restart.hdf5',mapping_flat)
+regrid_restart(f'{wd}/{grid2}_{load}_{mat}_restart.hdf5',f'{wd}/{grid3}_{load}_{mat}_restart.hdf5',mapping_flat,mapping_phase)
 
 r.view(increments=0).export_DADF5(f'{wd}/{grid3}_{load}_{mat}.hdf5',mapping=mapping)
 
