@@ -123,7 +123,7 @@ P_ = np.concatenate([P[0],P[1],P[2]])
 F_ = np.concatenate([F[0],[F[0][-1]@F1 for F1 in F[1]], [F[0][-1]@F[1][-1]@F2 for F2 in F[2]]])
 
 epsilon = damask.mechanics.strain(F_,m=0.0,t='V')
-sigma = damask.mechanics.stress_Cauchy(P_,F_)
+sigma = damask.mechanics.stress_Cauchy(P_,np.concatenate([F[0],F[1],F[2]]))
 
 fig, ax1 = plt.subplots()
 
