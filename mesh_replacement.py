@@ -6,6 +6,7 @@ import os
 
 import numpy as np
 import h5py
+from matplotlib import pyplot as plt
 
 import damask
 
@@ -14,6 +15,9 @@ grid = '20grains16x16x16'
 mat = 'material'
 grid2 = grid+'-2'
 grid3 = grid+'-3'
+
+F = []
+P = []
 
 cwd = os.getcwd()
 print(wd := tempfile.mkdtemp())
@@ -55,6 +59,8 @@ def regrid_restart(fname_in,fname_out,mapping_flat,mapping_phase):
 # normal run
 damask.util.run(f'DAMASK_grid -g {cwd}/{grid}.vti -l {cwd}/{load}.yaml -m {cwd}/{mat}.yaml -w {wd}')
 r = damask.Result(f'{wd}/{grid}_{load}_{mat}.hdf5')
+F.append([np.average(_,axis=0) for _ in r.place('F').values()])
+P.append([np.average(_,axis=0) for _ in r.place('P').values()])
 r.add_IPF_color([0,0,1])
 r.export_VTK(target_dir=cwd)
 F_avg = np.average(r.view(increments=-1).place('F'),axis=0)
@@ -81,6 +87,8 @@ shutil.copyfile(f'{cwd}/{load}-2.yaml',f'{wd}/{load}.yaml')
 shutil.copyfile(f'{wd}/{grid}_{load}_{mat}.sta',f'{wd}/{grid2}_{load}_{mat}.sta')
 damask.util.run(f'DAMASK_grid -g {grid2}.vti -l {load}.yaml -m {cwd}/{mat}.yaml -r 190 -w {wd}')
 r = damask.Result(f'{wd}/{grid2}_{load}_{mat}.hdf5').view_less(increments=0)
+F.append([np.average(_,axis=0) for _ in r.place('F').values()])
+P.append([np.average(_,axis=0) for _ in r.place('P').values()])
 r.add_IPF_color([0,0,1])
 r.export_VTK(target_dir=cwd)
 F_avg = np.average(r.view(increments=-1).place('F'),axis=0)
@@ -105,5 +113,22 @@ shutil.copyfile(f'{cwd}/{load}-3.yaml',f'{wd}/{load}.yaml')
 shutil.copyfile(f'{wd}/{grid2}_{load}_{mat}.sta',f'{wd}/{grid3}_{load}_{mat}.sta')
 damask.util.run(f'DAMASK_grid -g {grid3}.vti -l {load}.yaml -m {cwd}/{mat}.yaml -r 440 -w {wd}')
 r = damask.Result(f'{wd}/{grid3}_{load}_{mat}.hdf5').view_less(increments=0)
+F.append([np.average(_,axis=0) for _ in r.place('F').values()])
+P.append([np.average(_,axis=0) for _ in r.place('P').values()])
 r.add_IPF_color([0,0,1])
 r.export_VTK(target_dir=cwd)
+
+# plot average stress-strain curve
+P_ = np.concatenate([P[0],P[1],P[2]])
+F_ = np.concatenate([F[0],[F[0][-1]@F1 for F1 in F[1]], [F[0][-1]@F[1][-1]@F2 for F2 in F[2]]])
+
+epsilon = damask.mechanics.strain(F_,m=0.0,t='V')
+sigma = damask.mechanics.stress_Cauchy(P_,F_)
+
+fig, ax1 = plt.subplots()
+
+ax1.set_xlabel('strain')
+ax1.set_ylabel('Cauchy stress / Pa')
+ax1.plot(epsilon[:,0,0],sigma[:,0,0])
+
+plt.show()
