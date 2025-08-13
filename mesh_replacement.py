@@ -119,16 +119,21 @@ r.add_IPF_color([0,0,1])
 r.export_VTK(target_dir=cwd)
 
 # plot average stress-strain curve
-F_ = np.concatenate([F[0],[F[0][-1]@F1 for F1 in F[1]], [F[0][-1]@F[1][-1]@F2 for F2 in F[2]]])
+F_ = np.concatenate([F[0], F[0][-1]@F[1], F[0][-1]@F[1][-1]@F[2]])
+epsilon_multiplicative = damask.mechanics.strain(F_,m=0.0,t='V')
 
-epsilon = damask.mechanics.strain(F_,m=0.0,t='V')
+epsilon_ = [damask.mechanics.strain(_,m=0.0,t='V') for _ in F]
+epsilon_additive = np.concatenate([epsilon_[0],epsilon_[0][-1]+epsilon_[1],epsilon_[0][-1]+epsilon_[1][-1]+epsilon_[2]])
+
 sigma = damask.mechanics.stress_Cauchy(np.concatenate([P[0],P[1],P[2]]),
                                        np.concatenate([F[0],F[1],F[2]]))
 
-fig, ax1 = plt.subplots()
+fig, ax = plt.subplots()
 
-ax1.set_xlabel('strain')
-ax1.set_ylabel('Cauchy stress / Pa')
-ax1.plot(epsilon[:,0,0],sigma[:,0,0])
+ax.set_xlabel('strain')
+ax.set_ylabel('Cauchy stress / Pa')
+ax.plot(epsilon_multiplicative[:,0,0],sigma[:,0,0],label='multiplicative')
+ax.plot(epsilon_additive[:,0,0],sigma[:,0,0],label='addititve')
+ax.legend()
 
 plt.show()
