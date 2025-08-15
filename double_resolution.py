@@ -9,7 +9,7 @@ import h5py
 
 import damask
 
-load = 'tensionX'
+load = 'shearXY'
 grid = '20grains16x16x16'
 mat = 'material'
 grid2 = grid+'-2'
